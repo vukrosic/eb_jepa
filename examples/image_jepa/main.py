@@ -13,7 +13,9 @@ Usage:
 """
 
 import os
+import json
 import time
+import csv
 from pathlib import Path
 
 import fire
@@ -596,6 +598,22 @@ def run(
             linear_probe_state_dict=linear_probe.state_dict(),
             linear_val_acc=val_acc,
         )
+        # Append to CSV
+        log_csv = {
+            "epoch": epoch,
+            "train_loss": train_metrics["loss"],
+            "val_acc": val_acc,
+            "val_loss": val_loss,
+            "lr": optimizer.param_groups[0]["lr"] if not isinstance(optimizer.param_groups[0]["lr"], torch.Tensor) else optimizer.param_groups[0]["lr"].item()
+        }
+        csv_path = exp_dir / "metrics.csv"
+        file_exists = csv_path.exists()
+        with open(csv_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=log_csv.keys())
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(log_csv)
+
         if epoch % cfg.logging.save_every == 0 and epoch > 0:
             save_checkpoint(
                 exp_dir / f"epoch_{epoch}.pth.tar",
