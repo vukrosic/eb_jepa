@@ -228,9 +228,12 @@ class WarmupCosineScheduler:
 
     def step(self, epoch):
         if epoch < self.warmup_epochs:
-            lr = self.warmup_start_lr + epoch * (
-                self.base_lr - self.warmup_start_lr
-            ) / (self.warmup_epochs - 1)
+            if self.warmup_epochs > 1:
+                lr = self.warmup_start_lr + epoch * (
+                    self.base_lr - self.warmup_start_lr
+                ) / (self.warmup_epochs - 1)
+            else:
+                lr = self.base_lr
         else:
             lr = self.min_lr + 0.5 * (self.base_lr - self.min_lr) * (
                 1

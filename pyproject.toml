@@ -39,7 +39,7 @@ dependencies = [
     "omegaconf",
     "ruamel.yaml",
 ]
-requires-python = "==3.12.*"
+requires-python = ">=3.11"
 
 [build-system]
 requires = ["setuptools>=61.0"]
