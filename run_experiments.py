@@ -5,28 +5,32 @@ import pandas as pd
 import warnings
 warnings.filterwarnings('ignore')
 
-epochs_to_test = [5, 10, 15, 25, 40]
+lrs_to_test = [0.1, 0.3, 0.5, 0.707, 1.0, 1.5]
+epochs = 5
 results = []
 
-print("Starting time vs accuracy experiments...")
+print(f"Starting learning rate search for {epochs} epochs...")
 print("Running the highly optimized config (rapid.yaml).")
 
-for ep in epochs_to_test:
-    folder_name = f"checkpoints/image_jepa/exp_{ep}ep"
+for lr in lrs_to_test:
+    folder_name = f"checkpoints/image_jepa/exp_lr_{lr}"
     
     start = time.time()
     cmd = [
         "python", "-m", "examples.image_jepa.main", 
         "--fname", "examples/image_jepa/cfgs/rapid.yaml", 
-        f"--optim.epochs={ep}", 
+        f"--optim.epochs={epochs}", 
+        f"--optim.lr={lr}",
         f"--meta.model_folder={folder_name}",
         "--logging.tqdm_silent=True"  # Suppress tqdm
     ]
     env = os.environ.copy()
     env["EBJEPA_DSETS"] = "./datasets"
     
-    print(f"Running {ep:2d} epochs... ", end="", flush=True)
-    subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"\nRunning LR {lr}...")
+    res = subprocess.run(cmd, env=env)
+    if res.returncode != 0:
+        print(f"Error running for {lr}")
     end = time.time()
     
     total_time = end - start
@@ -42,7 +46,7 @@ for ep in epochs_to_test:
         final_train_loss = "Error"
     
     results.append({
-        "Epochs": ep,
+        "LR": lr,
         "Time (Minutes)": round(total_time / 60.0, 2),
         "Val Accuracy (%)": final_acc,
         "Train Loss": round(final_train_loss, 4) if isinstance(final_train_loss, float) else final_train_loss
@@ -54,7 +58,6 @@ df_res = pd.DataFrame(results)
 print(df_res.to_markdown(index=False))
 
 with open("docs/fast_training_guide.md", "a") as f:
-    f.write("\n\n## ⏱️ Training Time vs. Accuracy Trade-off (RTX 4090)\n\n")
-    f.write("To help decide on the optimal training length for your daily research, here are the empirical results of running the **rapid config** on an RTX 4090:\n\n")
+    f.write(f"\n\n## ⏱️ Learning Rate Search ({epochs} Epochs)\n\n")
+    f.write("Results of the learning rate search on rapid config:\n\n")
     f.write(df_res.to_markdown(index=False))
-    f.write("\n\n*Note: Time includes all overhead (data loading, validation linear probing every epoch, etc).*")

@@ -7,7 +7,7 @@ meta:
 
 data:
   dataset: cifar10
-  batch_size: 4096       # 512 gives the absolute highest image/sec throughput on RTX 4090
+  batch_size: 3072       # Optimal batch size for RTX 4090 found in search
   num_workers: 16       # Maximize CPU-to-GPU memory transfer
 
 model:
@@ -23,7 +23,7 @@ loss:
 
 optim:
   epochs: 50            # 50 Epochs takes ~11 minutes total
-  lr: 0.707               # Very aggressive learning rate for short runs
+  lr: 0.707               # Best learning rate found in search for rapid training
   weight_decay: 1.0e-4
   warmup_epochs: 5      # Quick 5-epoch warmup to stabilize the aggressive LR
   warmup_start_lr: 3.0e-5

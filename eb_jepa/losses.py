@@ -76,7 +76,9 @@ class HingeStdLoss(torch.nn.Module):
             std_loss: Scalar tensor with the hinge loss on standard deviations
         """
         x = x - x.mean(dim=0, keepdim=True)
-        std = torch.sqrt(x.var(dim=0) + 0.0001)
+        # Calculate variance explicitly to avoid memory issues sometimes seen with x.var()
+        var = (x ** 2).mean(dim=0)
+        std = torch.sqrt(var + 0.0001)
         std_loss = torch.mean(F.relu(self.std_margin - std))
         return std_loss
 
