@@ -12,7 +12,7 @@ data:
 
 model:
   type: vit_s              # Vision Transformer Small (384-dim, 12 layers, 6 heads)
-  patch_size: 4            # 32x32 CIFAR images → 8x8 = 64 patches (Better resolution)
+  patch_size: 8            # try with 4 later, need to reduce memory prob
   use_projector: true
   proj_hidden_dim: 2048
   proj_output_dim: 2048
