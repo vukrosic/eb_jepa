@@ -1,0 +1,41 @@
+# Rapid ViT Experiment Configuration (Image JEPA / VICReg)
+# Same as rapid.yaml but using Vision Transformer (ViT-S) instead of ResNet-18
+
+meta:
+  seed: 42
+  device: auto
+
+data:
+  dataset: cifar10
+  batch_size: 3072         # Large batch for fast testing on RTX 4090
+  num_workers: 16
+
+model:
+  type: vit_s              # Vision Transformer Small (384-dim, 12 layers, 6 heads)
+  patch_size: 4            # 32x32 CIFAR images → 8x8 = 64 patches (Better resolution)
+  use_projector: true
+  proj_hidden_dim: 2048
+  proj_output_dim: 2048
+
+loss:
+  type: vicreg
+  std_coeff: 25.0
+  cov_coeff: 1.0
+
+optim:
+  epochs: 20
+  lr: 0.02                 # Optimized LR found in BS=3072 ablation (Stable & High Acc)
+  weight_decay: 1.0e-4
+  warmup_epochs: 10        # Transformers need longer warmup for stable training
+  warmup_start_lr: 3.0e-5
+  min_lr: 0.0
+
+logging:
+  log_wandb: false
+  log_every: 5
+  save_every: 50
+  tqdm_silent: false
+
+training:
+  use_amp: true
+  dtype: bfloat16
