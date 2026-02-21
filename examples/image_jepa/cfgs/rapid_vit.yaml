@@ -7,12 +7,12 @@ meta:
 
 data:
   dataset: cifar10
-  batch_size: 3072         # Large batch for fast testing on RTX 4090
+  batch_size: 768          # Large batch for fast testing on RTX 4090
   num_workers: 16
 
 model:
   type: vit_s              # Vision Transformer Small (384-dim, 12 layers, 6 heads)
-  patch_size: 8            # try with 4 later, need to reduce memory prob
+  patch_size: 4            # try with 4 later, need to reduce memory prob
   use_projector: true
   proj_hidden_dim: 2048
   proj_output_dim: 2048
@@ -24,7 +24,7 @@ loss:
 
 optim:
   epochs: 20
-  lr: 0.02                 # Optimized LR found in BS=3072 ablation (Stable & High Acc)
+  lr: 0.005                 # Optimized LR found in BS=3072 ablation (Stable & High Acc)
   weight_decay: 1.0e-4
   warmup_epochs: 10        # Transformers need longer warmup for stable training
   warmup_start_lr: 3.0e-5
