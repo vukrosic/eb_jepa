@@ -123,20 +123,52 @@ class Teon(torch.optim.Optimizer):
                 else:
                     gs = [m for m in mems]
                 
-                # Stack to form tensor of shape (m, n, K)
-                T = torch.stack(gs, dim=-1)
-                m, n, K = T.shape
+                # TEON works best when stacking similar matrices across layers.
+                # If weights are combined QKV (3*D x D), we split them to avoid mixing head correlations.
+                first_g = gs[0]
+                if first_g.size(0) == first_g.size(1) * 3:
+                    d = first_g.size(1)
+                    q_list, k_list, v_list = [], [], []
+                    for g in gs:
+                        q, k_v, v = g.split(d, dim=0)
+                        q_list.append(q)
+                        k_list.append(k_v)
+                        v_list.append(v)
+                    
+                    # Orthogonalize Q, K, and V tensors separately
+                    # Each has shape (D, D, k) -> Matricized to (D, D*k)
+                    
+                    # Process Query matrices
+                    T_q = torch.stack(q_list, dim=-1)
+                    T_q_m1 = T_q.reshape(d, d * k)
+                    O_q_m1 = zeropower_polar_express(T_q_m1, steps=group["ns_steps"])
+                    O_q = O_q_m1.reshape(d, d, k)
+                    
+                    # Process Key matrices
+                    T_k = torch.stack(k_list, dim=-1)
+                    T_k_m1 = T_k.reshape(d, d * k)
+                    O_k_m1 = zeropower_polar_express(T_k_m1, steps=group["ns_steps"])
+                    O_k = O_k_m1.reshape(d, d, k)
+                    
+                    # Process Value matrices
+                    T_v = torch.stack(v_list, dim=-1)
+                    T_v_m1 = T_v.reshape(d, d * k)
+                    O_v_m1 = zeropower_polar_express(T_v_m1, steps=group["ns_steps"])
+                    O_v = O_v_m1.reshape(d, d, k)
+                    
+                    # Recombine and set scale (for square matrices scale is 1.0)
+                    O = torch.cat([O_q, O_k, O_v], dim=0)
+                    scale = 1.0
+                else:
+                    # General case: stack whole matrices as (m, n, k) tensor
+                    T = torch.stack(gs, dim=-1)
+                    m, n, _ = T.shape
+                    # Mode-1 matricization: m x (n * k)
+                    T_m1 = T.reshape(m, n * k)
+                    O_m1 = zeropower_polar_express(T_m1, steps=group["ns_steps"])
+                    O = O_m1.reshape(m, n, k)
+                    scale = max(1, m / n)**0.5
                 
-                # Mode-1 matricization: m x (n * K)
-                T_m1 = T.reshape(m, n * K)
-                
-                # Orthogonalize
-                O_m1 = zeropower_polar_express(T_m1, steps=group["ns_steps"])
-                
-                # Fold back
-                O = O_m1.reshape(m, n, K)
-                
-                scale = max(1, m / n)**0.5
                 for idx, p in enumerate(p_list):
                     update = O[:, :, idx].to(p.device).to(p.dtype)
                     p.add_(update.view_as(p), alpha=-group["lr"] * scale)
