@@ -55,6 +55,7 @@ from examples.image_jepa.dataset import (
     get_train_transforms,
     get_val_transforms,
 )
+from eb_jepa.optimizers import Muon, Teon, get_optimizer_groups
 from examples.image_jepa.eval import LinearProbe, evaluate_linear_probe
 
 logger = get_logger(__name__)
@@ -397,7 +398,7 @@ def run(
     transform = get_train_transforms()
 
     # Use EBJEPA_DSETS environment variable if set, otherwise fall back to config
-    data_dir = os.environ.get("EBJEPA_DSETS")
+    data_dir = os.environ.get("EBJEPA_DSETS", "./datasets")
     logger.info(f"Using data directory: {data_dir}")
 
     base_train_dataset = CIFAR10(
@@ -499,23 +500,92 @@ def run(
     scaler = GradScaler(device.type, enabled=use_amp)
     logger.info(f"Using AMP with {dtype=}" if use_amp else f"AMP disabled")
 
-    optimizer = LARS(
-        [
-            {"params": model.parameters(), "lr": cfg.optim.lr},
-            {"params": linear_probe.parameters(), "lr": 0.1},  # Linear probe parameters
-        ],
-        weight_decay=cfg.optim.weight_decay,
-        eta=0.02,
-        clip_lr=True,
-        exclude_bias_n_norm=True,
-        momentum=0.9,
-    )
+    # Optimizer Setup
+    optim_type = cfg.optim.get("type", "muon").lower()
+    
+    if optim_type == "lars":
+        optimizer = LARS(
+            [
+                {"params": model.parameters(), "lr": cfg.optim.lr},
+                {"params": linear_probe.parameters(), "lr": 0.1},
+            ],
+            weight_decay=cfg.optim.weight_decay,
+            eta=0.02,
+            clip_lr=True,
+            exclude_bias_n_norm=True,
+            momentum=cfg.optim.get("momentum", 0.9),
+        )
+    elif optim_type in ["adamw"]:
+        optimizer = optim.AdamW(
+            [
+                {"params": model.parameters(), "lr": cfg.optim.lr, "weight_decay": cfg.optim.weight_decay},
+                {"params": linear_probe.parameters(), "lr": 0.1, "weight_decay": 0.0},
+            ],
+            betas=(0.9, 0.95),
+            eps=1e-8,
+        )
+    elif optim_type in ["muon", "teon"]:
+        use_teon = (optim_type == "teon")
+        teon_k = cfg.optim.get("teon_k", 2)
+        
+        teon_params, muon_params, adam_params = get_optimizer_groups(model, use_teon=use_teon, teon_k=teon_k)
+        
+        # As requested: lr for muon/teon is 10x bigger than adamw.
+        muon_lr = cfg.optim.get("muon_lr", cfg.optim.lr * 10)
+        
+        # Setup parameter groups for AdamW
+        adam_groups = [
+            {"params": adam_params, "lr": cfg.optim.lr, "weight_decay": cfg.optim.weight_decay},
+            {"params": linear_probe.parameters(), "lr": 0.1, "weight_decay": 0.0},
+        ]
+        
+        adam_opt = optim.AdamW(adam_groups, betas=(0.9, 0.95), eps=1e-8)
+        
+        # Setup Muon/Teon groups
+        special_opts = []
+        if len(muon_params) > 0:
+            special_opts.append(
+                Muon([{"params": muon_params}], lr=muon_lr, momentum=0.95, nesterov=True, ns_steps=5)
+            )
+            
+        if len(teon_params) > 0 and use_teon:
+            special_opts.append(
+                Teon([{"params": teon_params, "k": teon_k}], lr=muon_lr, momentum=0.95, nesterov=True, ns_steps=5, k=teon_k)
+            )
+        
+        class JointOptimizer(optim.Optimizer):
+            def __init__(self, opts):
+                self.opts = opts
+                self.param_groups = []
+                for o in opts:
+                    self.param_groups.extend(o.param_groups)
+                
+            @torch.no_grad()
+            def step(self):
+                for o in self.opts:
+                    o.step()
+                
+            def zero_grad(self):
+                for o in self.opts:
+                    o.zero_grad()
+                    
+            def state_dict(self):
+                return {i: o.state_dict() for i, o in enumerate(self.opts)}
+                
+            def load_state_dict(self, state_dict):
+                for i, o in enumerate(self.opts):
+                    o.load_state_dict(state_dict[i])
+                    
+        optimizer = JointOptimizer([adam_opt] + special_opts)
+        
+    else:
+        raise ValueError(f"Unknown optim_type: {optim_type}")
 
     scheduler = WarmupCosineScheduler(
         optimizer,
         warmup_epochs=cfg.optim.warmup_epochs,
         max_epochs=cfg.optim.epochs,
-        base_lr=cfg.optim.lr,
+        base_lr=cfg.optim.get("lr", cfg.optim.get("base_lr", 0.005)), 
         min_lr=cfg.optim.min_lr,
         warmup_start_lr=cfg.optim.warmup_start_lr,
     )
